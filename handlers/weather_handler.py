@@ -2,7 +2,10 @@ import aiohttp
 from aiogram import Router, types
 from aiogram.filters import Command
 from services.weather_service import get_weather
+
 from services.audio_service import create_voice_message
+
+#from services.audio_service import create_audio_message
 from services.image_service import get_weather_image
 
 router = Router()
@@ -40,7 +43,7 @@ async def send_weather(message: types.Message):
     await message.answer_photo(photo=weather_image)
 
     # Создание и отправка голосового сообщения
-    audio_file_path = await create_voice_message(weather_text)
+    audio_file_path = await create_audio_message(weather_text)
     await message.answer_voice(voice=audio_file_path)
 
     # Приглашение пользователя к запросу информации о городе
