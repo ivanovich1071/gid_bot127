@@ -4,6 +4,7 @@ from aiogram.filters import Command
 from services.weather_service import get_weather
 from services.audio_service import create_voice_message
 from services.image_service import choose_image_by_temperature
+from services.openai_service import get_city_info
 
 router = Router()
 
@@ -53,5 +54,13 @@ async def get_city_weather(message: types.Message):
             await message.answer_photo(photo=types.FSInputFile(image_path))
 
         await message.reply(weather_text)
+
+        # Получение дополнительной информации о городе через OpenAI
+        city_info = await get_city_info(city_name)
+        if city_info:
+            await message.reply(f"Информация о городе {city_name}:\n{city_info}")
+        else:
+            await message.reply("Не удалось получить информацию о городе через OpenAI.")
+
     else:
         await message.reply("Не удалось найти погоду для указанного города. Пожалуйста, проверьте правильность написания города.")

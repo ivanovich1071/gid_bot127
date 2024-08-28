@@ -6,6 +6,11 @@ async def get_weather(city_name):
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city_name}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
         async with session.get(url) as response:
             if response.status == 200:
-                return await response.json()
+                weather_data = await response.json()
+                if "main" in weather_data:
+                    return weather_data
+                else:
+                    return None
             else:
                 return None
+
