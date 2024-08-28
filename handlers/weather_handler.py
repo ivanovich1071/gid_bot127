@@ -1,46 +1,57 @@
+import sqlite3
 from aiogram import Router, types
 from aiogram.filters import Command
 from services.weather_service import get_weather
 from services.audio_service import create_voice_message
 from services.image_service import choose_image_by_temperature
+
 router = Router()
 
-# Хендлер для команды /weather, запрашивает у пользователя название города
-@router.message(Command("weather"))
-async def weather_command(message: types.Message):
-    await message.reply("Введите название города для получения погоды:")
+# Хендлер для регистрации города
+@router.message(Command("city"))
+async def city_command(message: types.Message):
+    await message.reply("Введите название города:")
 
-# Хендлер для обработки сообщений с названием города
+# Хендлер для получения и отправки погоды с изображением и голосовым сообщением
 @router.message(lambda message: not message.text.startswith("/"))
-async def send_weather(message: types.Message):
-    city_name = message.text.strip()
+async def get_city_weather(message: types.Message):
+    city_name = message.text
+    weather_data = await get_weather(city_name)
 
-    # Получение данных о погоде
-    weather_info = await get_weather(city_name)
+    if weather_data:
+        city = weather_data["name"]
+        temperature = weather_data["main"]["temp"]
+        humidity = weather_data["main"]["humidity"]
+        pressure = weather_data["main"]["pressure"]
 
-    if weather_info is None:
-        await message.reply("Не удалось получить информацию о погоде. Проверьте название города и попробуйте снова.")
-        return
+        # Сохранение города в БД
+        conn = sqlite3.connect("users.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT requested_cities FROM users WHERE chat_id = ?", (message.chat.id,))
+        cities = cursor.fetchone()[0]
+        if cities:
+            cities = cities + f", {city_name}"
+        else:
+            cities = city_name
+        cursor.execute("UPDATE users SET requested_cities = ? WHERE chat_id = ?", (cities, message.chat.id))
+        conn.commit()
+        conn.close()
 
-    # Отправка текстового сообщения с погодой
-    weather_text = (
-        f"Погода в городе {city_name}:\n"
-        f"Температура: {weather_info['temperature']}°C\n"
-        f"Описание: {weather_info['description']}\n"
-        f"Скорость ветра: {weather_info['wind_speed']} м/с"
-    )
-    await message.reply(weather_text)
+        weather_text = (f"В городе {city} температура - {temperature}°C\n"
+                        f"Влажность воздуха - {humidity}%\n"
+                        f"Атмосферное давление - {pressure} мм рт. ст.")
 
-    # Отправка изображения с погодой
-    weather_image = choose_image_by_temperature(weather_info['description'])
-    await message.answer_photo(photo=weather_image)
+        # Создаем голосовое сообщение
+        voice_message_path = create_voice_message(weather_text)
 
-    # Создание и отправка голосового сообщения
-    audio_file_path = create_voice_message(weather_text)
-    await message.answer_voice(voice=types.FSInputFile(audio_file_path))
+        # Отправка голосового сообщения
+        await message.reply_voice(voice=types.FSInputFile(voice_message_path))
 
-    # Приглашение пользователя к запросу информации о городе
-    await message.reply(
-        f"Хотите узнать больше об этом городе, {city_name}? "
-        "Введите ваш запрос для получения информации:"
-    )
+        # Выбор и отправка изображения в зависимости от температуры
+        image_path = choose_image_by_temperature(temperature)
+        if image_path:
+            await message.answer_photo(photo=types.FSInputFile(image_path))
+
+        await message.reply(weather_text)
+    else:
+        await message.reply("Не удалось найти погоду для указанного города. Пожалуйста, проверьте правильность написания города.")
