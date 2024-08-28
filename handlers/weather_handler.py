@@ -56,7 +56,7 @@ async def get_city_weather(message: types.Message):
         await message.reply(weather_text)
 
         # Получение дополнительной информации о городе через OpenAI
-        city_info = await get_city_info(city_name)
+        city_info = await get_city_info(city_name, message.text)  # Передаем второй аргумент
         if city_info:
             await message.reply(f"Информация о городе {city_name}:\n{city_info}")
         else:
