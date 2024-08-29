@@ -1,13 +1,14 @@
 import os
 import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.filters import Command
-from aiogram.fsm.storage.memory import MemoryStorage
-from dotenv import load_dotenv
-import openai
 import requests
+import openai
 from gtts import gTTS
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, FSInputFile
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.context import FSMContext
+from dotenv import load_dotenv
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -62,23 +63,33 @@ async def get_city_info(city_name, user_query, user_dialogue):
         messages.extend(user_dialogue)
     messages.append({"role": "user", "content": user_query})
 
+    # Использование новой версии API для вызова ChatCompletion
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=messages
     )
 
-    reply = response.choices[0].message["content"]
+    reply = response['choices'][0]['message']['content']
     user_dialogue.append({"role": "assistant", "content": reply})
 
     return reply
+
+
+# Функция для расшифровки аудиофайла с помощью OpenAI
+async def transcribe_audio(file_path):
+    with open(file_path, "rb") as audio_file:
+        transcript = openai.Audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+    return transcript['text']
 
 
 # Хендлер команды /start
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     user_name = message.from_user.first_name
-    await message.reply_voice(voice=types.FSInputFile(create_voice_message(f"Привет, {user_name}!")),
-                              reply_markup=keyboard)
+    await message.reply_voice(voice=FSInputFile(create_voice_message(f"Привет, {user_name}!")), reply_markup=keyboard)
     await message.reply("О каком городе вы хотите узнать? Введите название или скажите его.")
 
 
@@ -90,15 +101,21 @@ async def city_command(message: types.Message):
 
 # Хендлер получения погоды и информации о городе
 @dp.message(lambda message: message.text or message.voice)
-async def get_city_weather_and_info(message: types.Message):
+async def get_city_weather_and_info(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
 
     # Проверка, текстовое сообщение или голосовое
     if message.voice:
-        voice_file = await message.voice.get_file()
-        file_path = f"https://api.telegram.org/file/bot{TOKEN}/{voice_file.file_path}"
-        audio_content = requests.get(file_path).content
-        user_query = openai.Audio.transcribe("whisper-1", audio_content).get('text')
+        file_info = await bot.get_file(message.voice.file_id)
+        file_path = f"https://api.telegram.org/file/bot{TOKEN}/{file_info.file_path}"
+        local_file_path = "voice.ogg"
+
+        # Загрузить аудиофайл локально
+        with open(local_file_path, "wb") as audio_file:
+            audio_file.write(requests.get(file_path).content)
+
+        # Расшифровать аудиофайл
+        user_query = await transcribe_audio(local_file_path)
     else:
         user_query = message.text
 
@@ -120,19 +137,22 @@ async def get_city_weather_and_info(message: types.Message):
                         f"Атмосферное давление - {pressure} мм рт. ст.")
 
         voice_message_path = create_voice_message(weather_text)
-        await message.reply_voice(voice=types.FSInputFile(voice_message_path))
+        await message.reply_voice(voice=FSInputFile(voice_message_path))
         await message.reply(weather_text)
 
-        # Инициализация диалога для пользователя, если его еще нет
-        if not hasattr(message.from_user, 'dialogue'):
-            message.from_user.dialogue = []
+        # Получение диалога из состояния или инициализация
+        dialogue = await state.get_data()
+        if 'dialogue' not in dialogue:
+            dialogue['dialogue'] = []
 
         # Получение информации о городе через OpenAI
-        city_info = await get_city_info(city_name, user_query, message.from_user.dialogue)
+        city_info = await get_city_info(city_name, user_query, dialogue['dialogue'])
         if city_info:
             await message.reply(city_info)
             voice_message_path = create_voice_message(city_info)
-            await message.reply_voice(voice=types.FSInputFile(voice_message_path))
+            await message.reply_voice(voice=FSInputFile(voice_message_path))
+            # Обновление состояния с новым диалогом
+            await state.update_data(dialogue=dialogue['dialogue'])
         else:
             await message.reply("Не удалось получить информацию о городе через OpenAI.")
     else:
