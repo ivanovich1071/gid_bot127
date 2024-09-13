@@ -4,10 +4,14 @@ import requests
 import openai
 from gtts import gTTS
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, FSInputFile
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.context import FSMContext
+#from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from aiogram.dispatcher.filters import Command
+#from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, FSInputFile
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InputFile
+#from aiogram.fsm.storage.memory import MemoryStorage
+#from aiogram.fsm.context import FSMContext
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
